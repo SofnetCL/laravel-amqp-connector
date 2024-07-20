@@ -1,5 +1,5 @@
 {
-    "name": "sofnet/amqp-connector",
+    "name": "sofnetcl/laravel-amqp-connector",
     "type": "library",
     "require": {
         "php": "^8.0",
