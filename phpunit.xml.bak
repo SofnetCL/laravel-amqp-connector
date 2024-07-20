@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="vendor/autoload.php" colors="true" stopOnFailure="true" stopOnError="true">
+	<testsuites>
+		<testsuite name="Application Test Suite">
+			<directory>
+				tests
+			</directory>
+		</testsuite>
+	</testsuites>
+	<coverage>
+		<include>
+			<directory>
+				src
+			</directory>
+		</include>
+	</coverage>
+	<php>
+		<!-- Aquí puedes definir variables de entorno o configuraciones adicionales si es necesario -->
+	</php>
+</phpunit>

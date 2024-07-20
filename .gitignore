@@ -1,0 +1,5 @@
+.phpunit.result.cache
+coverage/
+phpunit.log
+/vendor
+.DS_Store

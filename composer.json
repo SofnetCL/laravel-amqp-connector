@@ -1,0 +1,30 @@
+{
+    "name": "sofnet/amqp-connector",
+    "require": {
+        "php": "^8.0",
+        "php-amqplib/php-amqplib": "^3.7",
+        "vlucas/phpdotenv": "^5.6"
+    },
+    "require-dev": {
+        "illuminate/support": "^9.0 || ^10.0 || ^11.0",
+        "phpunit/phpunit": "^11.2",
+        "mockery/mockery": "^1.6",
+        "phpoption/phpoption": "^1.9"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Sofnet\\AmqpConnector\\": "src/",
+            "Tests\\": "tests/"
+        }
+    },
+    "minimum-stability": "stable",
+    "version": "1.0.0",
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Sofnet\\AmqpConnector\\Providers\\AmqpServiceProvider"
+            ]
+        }
+    }
+}
