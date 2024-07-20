@@ -1,5 +1,6 @@
 {
     "name": "sofnet/amqp-connector",
+    "type": "library",
     "require": {
         "php": "^8.0",
         "php-amqplib/php-amqplib": "^3.7",
@@ -18,8 +19,6 @@
             "Tests\\": "tests/"
         }
     },
-    "minimum-stability": "stable",
-    "version": "1.0.0",
     "extra": {
         "laravel": {
             "providers": [
