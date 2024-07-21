@@ -99,7 +99,7 @@ class AmqpClient
             'body' => $request->getBody(),
         ]), [
             'correlation_id' => $request->getCorrelationId(),
-            'reply_to' => $request->getReplyTo(), // Set the reply_to header
+            'reply_to' => $queue === $this->rpcQueueName ? $request->getReplyTo() : null,
         ]);
 
         $channel->basic_publish($msg, '', $queue);
@@ -112,6 +112,7 @@ class AmqpClient
             throw new \Exception("Main channel does not exist.");
         }
 
+        // Consumer callback for normal messages
         $normalQueueCallback = function ($msg) use ($channel) {
             try {
                 $messageData = json_decode($msg->body, true);
@@ -129,9 +130,11 @@ class AmqpClient
             } catch (\Exception $e) {
                 // Handle or log the exception
                 error_log("Error processing normal queue message: " . $e->getMessage());
+                $channel->basic_nack($msg->delivery_info['delivery_tag'], false, true); // Requeue the message
             }
         };
 
+        // Consumer callback for RPC messages
         $rpcQueueCallback = function ($msg) use ($channel) {
             try {
                 $messageData = json_decode($msg->body, true);
@@ -168,6 +171,7 @@ class AmqpClient
             } catch (\Exception $e) {
                 // Handle or log the exception
                 error_log("Error processing RPC queue message: " . $e->getMessage());
+                $channel->basic_nack($msg->delivery_info['delivery_tag'], false, true); // Requeue the message
             }
         };
 
@@ -177,16 +181,17 @@ class AmqpClient
         // Registra el callback para la cola RPC
         $channel->basic_consume($this->rpcQueueName, '', false, true, false, false, $rpcQueueCallback);
 
-        while ($channel->is_consuming()) {
-            try {
+        // Consume los mensajes de forma indefinida
+        try {
+            while ($channel->is_consuming()) {
                 $channel->wait(null, false, $this->timeout);
-            } catch (\PhpAmqpLib\Exception\AMQPTimeoutException $e) {
-                // Handle or log the exception
-                error_log("Timeout waiting for messages: " . $e->getMessage());
-            } catch (\Exception $e) {
-                // Handle or log other exceptions
-                error_log("Error during message consumption: " . $e->getMessage());
             }
+        } catch (\PhpAmqpLib\Exception\AMQPProtocolChannelException $e) {
+            // Maneja el error si ocurre un problema con el canal
+            error_log("AMQPProtocolChannelException: " . $e->getMessage());
+        } catch (\Exception $e) {
+            // Maneja otros errores
+            error_log("Error during message consumption: " . $e->getMessage());
         }
     }
 
