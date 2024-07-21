@@ -11,6 +11,21 @@ if (!function_exists('config_path')) {
      */
     function config_path($path = '')
     {
-        return __DIR__ . "/../vendor/" . $path;
+        return __DIR__ . "/../config/" . $path;
     }
 }
+
+if (!function_exists('config')) {
+    /**
+     * Obtener el valor de configuración de la aplicación.
+     *
+     * @param  string  $key
+     *
+     * @return mixed
+     */
+    function config($key)
+    {
+        $config = require config_path('config.php');
+
+        return $config[$key];
+    }

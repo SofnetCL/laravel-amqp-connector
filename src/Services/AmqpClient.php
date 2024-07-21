@@ -11,8 +11,8 @@ use Sofnet\AmqpConnector\Response;
 
 class AmqpClient
 {
-    /** @var AMQPChannel[] */
-    protected array $channels = [];
+    /** @var AMQPChannel */
+    protected $mainChannel;
 
     /** @var AMQPStreamConnection */
     protected $connection;
@@ -21,31 +21,24 @@ class AmqpClient
     protected $router;
 
     /** @var string */
-    protected $queueName;
+    protected $mainQueueName;
 
-    public function __construct(Router $router, $queueName)
+    public function __construct(Router $router, $mainQueueName)
     {
         $this->router = $router;
-        $this->queueName = $queueName;
+        $this->mainQueueName = $mainQueueName;
     }
 
-    public function setConnectionfromConfig($config): void
+    public function connect($host, $port, $login, $password): void
     {
-        $this->connection = new AMQPStreamConnection(
-            $config['host'],
-            $config['port'],
-            $config['login'],
-            $config['password']
-        );
-        $this->createChannel($this->queueName);
-        $this->consumeMessage($this->queueName, $this->queueName);
+        $this->connection = new AMQPStreamConnection($host, $port, $login, $password);
+        $this->createMainChannel();
     }
 
     public function setConnection(AMQPStreamConnection $connection): void
     {
         $this->connection = $connection;
-        $this->createChannel($this->queueName);
-        $this->consumeMessage($this->queueName, $this->queueName);
+        $this->createMainChannel();
     }
 
     public function getConnection(): AMQPStreamConnection
@@ -53,28 +46,24 @@ class AmqpClient
         return $this->connection;
     }
 
-    public function createChannel($channelName): void
+    protected function createMainChannel(): void
     {
-        if (isset($this->channels[$channelName])) {
-            throw new \Exception("Channel {$channelName} already exists.");
+        if ($this->mainChannel) {
+            throw new \Exception("Main channel already exists.");
         }
 
-        $this->channels[$channelName] = $this->connection->channel();
+        $this->mainChannel = $this->connection->channel();
+        $this->mainChannel->queue_declare($this->mainQueueName, false, true, false, false);
     }
 
-    public function getChannel($channelName): ?AMQPChannel
+    public function getMainChannel(): ?AMQPChannel
     {
-        return $this->channels[$channelName] ?? null;
+        return $this->mainChannel;
     }
 
-    public function publishMessage($channelName, $queue, Request $request)
+    public function publishMessage($queue, Request $request)
     {
-        $channel = $this->getChannel($channelName);
-        if (!$channel) {
-            throw new \Exception("Channel {$channelName} does not exist.");
-        }
-
-        print_r($queue);
+        $channel = $this->connection->channel();  // Create a new channel for publishing
         $channel->queue_declare($queue, false, false, false, false);
         $msg = new AMQPMessage(json_encode([
             'origin' => $request->getOrigin(),
@@ -85,13 +74,14 @@ class AmqpClient
             'body' => $request->getBody(),
         ]));
         $channel->basic_publish($msg, '', $queue);
+        $channel->close();
     }
 
-    public function consumeMessage($channelName, $queue)
+    public function consumeMessage()
     {
-        $channel = $this->getChannel($channelName);
+        $channel = $this->getMainChannel();
         if (!$channel) {
-            throw new \Exception("Channel {$channelName} does not exist.");
+            throw new \Exception("Main channel does not exist.");
         }
 
         $callback = function ($msg) {
@@ -106,23 +96,22 @@ class AmqpClient
             $this->router->route($request);
         };
 
-        $channel->queue_declare($queue, false, false, false, false);
-        $channel->basic_consume($queue, '', false, true, false, false, $callback);
+        $channel->basic_consume($this->mainQueueName, '', false, true, false, false, $callback);
 
         while ($channel->is_consuming()) {
             $channel->wait();
         }
     }
 
-    public function sendSyncMessage($channelName, $queue, Request $request)
+    public function sendSyncMessage($queue, Request $request)
     {
-        $channel = $this->getChannel($channelName) ?? $this->createAndGetChannel($channelName);
+        $channel = $this->connection->channel();  // Create a new channel for sending synchronous messages
         $responseQueue = $channel->queue_declare('', false, false, true, false);
 
         $correlationId = uniqid();
 
         $request->setCorrelationId($correlationId);
-        $this->publishMessage($channelName, $queue, $request);
+        $this->publishMessage($queue, $request);
 
         $response = null;
         $callback = function ($msg) use ($correlationId, &$response, $channel) {
@@ -145,19 +134,14 @@ class AmqpClient
             $channel->wait();
         }
 
+        $channel->close();
         return $response;
-    }
-
-    protected function createAndGetChannel($channelName)
-    {
-        $this->createChannel($channelName);
-        return $this->getChannel($channelName);
     }
 
     public function __destruct()
     {
-        foreach ($this->channels as $channel) {
-            $channel->close();
+        if ($this->mainChannel) {
+            $this->mainChannel->close();
         }
         $this->connection->close();
     }

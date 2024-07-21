@@ -5,6 +5,7 @@ namespace Sofnet\AmqpConnector\Providers;
 use Illuminate\Support\ServiceProvider;
 use Sofnet\AmqpConnector\Services\AmqpClient;
 use Sofnet\AmqpConnector\Routing\Router;
+use Sofnet\AmqpConnector\Console\Commands\ConsumeMessages;
 
 class AmqpServiceProvider extends ServiceProvider
 {
@@ -16,15 +17,16 @@ class AmqpServiceProvider extends ServiceProvider
 
         $this->app->singleton(AmqpClient::class, function ($app) {
             $config = $app->make('config')->get('amqp');
-            $appQueue = $config['queue'];
+            $appChannel = $config['channel'];
 
-            $client = new AmqpClient($app->make(Router::class), $appQueue);
-            $client->setConnectionfromConfig($config);
+            $client = new AmqpClient($app->make(Router::class), $appChannel);
+            $client->connect($config['host'], $config['port'], $config['login'], $config['password']);
 
             return $client;
         });
 
         $this->app->alias(Router::class, 'amqp-router');
+        $this->commands([ConsumeMessages::class]);
     }
 
     public function boot()
