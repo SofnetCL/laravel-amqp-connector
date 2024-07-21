@@ -38,7 +38,7 @@ class Amqp
 
     public function consumeMessages(): void
     {
-        $this->amqpClient->consumeMessage();
+        $this->amqpClient->consumeMessages();
     }
 
     public function publishMessage(string $channel, Request $request): void
