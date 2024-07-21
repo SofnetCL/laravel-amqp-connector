@@ -178,7 +178,15 @@ class AmqpClient
         $channel->basic_consume($this->rpcQueueName, '', false, true, false, false, $rpcQueueCallback);
 
         while ($channel->is_consuming()) {
-            $channel->wait();
+            try {
+                $channel->wait(null, false, $this->timeout);
+            } catch (\PhpAmqpLib\Exception\AMQPTimeoutException $e) {
+                // Handle or log the exception
+                error_log("Timeout waiting for messages: " . $e->getMessage());
+            } catch (\Exception $e) {
+                // Handle or log other exceptions
+                error_log("Error during message consumption: " . $e->getMessage());
+            }
         }
     }
 
@@ -222,6 +230,9 @@ class AmqpClient
         } catch (\PhpAmqpLib\Exception\AMQPTimeoutException $e) {
             $channel->close();
             throw new \Exception('Timeout waiting for response');
+        } catch (\Exception $e) {
+            $channel->close();
+            throw new \Exception('Error during sync message processing: ' . $e->getMessage());
         }
 
         $channel->close();
