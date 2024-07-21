@@ -73,7 +73,7 @@ class AmqpClient
     public function publishMessage($queue, Request $request)
     {
         $channel = $this->connection->channel();  // Create a new channel for publishing
-        $channel->queue_declare($queue, false, false, false, false);
+        $channel->queue_declare($queue, false, false, false, true);
         $msg = new AMQPMessage(json_encode([
             'origin' => $request->getOrigin(),
             'destination' => $request->getDestination(),
