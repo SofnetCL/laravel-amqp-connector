@@ -10,7 +10,7 @@ class Router
     protected $asyncRoutes = [];
 
 
-    public function asynGroup($prefix, callable $callback)
+    public function asyncGroup($prefix, callable $callback)
     {
         $group = new RouteGroup($prefix);
         call_user_func($callback, $group);
