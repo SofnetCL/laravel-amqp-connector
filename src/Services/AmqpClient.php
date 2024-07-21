@@ -21,7 +21,7 @@ class AmqpClient
     protected $router;
 
     /** @var string */
-    protected $mainQueueName;
+    protected $queueName;
 
     /** @var string */
     protected $rpcQueueName;
@@ -42,7 +42,7 @@ class AmqpClient
     public function connect($host, $port, $login, $password, $mainQueue, $rpcQueue): void
     {
         $this->connection = new AMQPStreamConnection($host, $port, $login, $password);
-        $this->mainQueueName = $mainQueue;
+        $this->queueName = $mainQueue;
         $this->rpcQueueName = $rpcQueue;
         $this->declareChannels();
     }
@@ -50,7 +50,7 @@ class AmqpClient
     public function setConnection(AMQPStreamConnection $connection, $mainQueue, $rpcQueue): void
     {
         $this->connection = $connection;
-        $this->mainQueueName = $mainQueue;
+        $this->queueName = $mainQueue;
         $this->rpcQueueName = $rpcQueue;
         $this->declareChannels();
     }
@@ -69,7 +69,7 @@ class AmqpClient
         $this->mainChannel = $this->connection->channel();
 
         // Declare the main queue
-        $this->mainChannel->queue_declare($this->mainQueueName, false, true, false, false);
+        $this->mainChannel->queue_declare($this->queueName, false, true, false, false);
 
         // Declare the RPC queue with DLX configuration
         $arguments = [
@@ -104,14 +104,14 @@ class AmqpClient
         $channel->basic_publish($msg, '', $queue);
     }
 
-    public function consumeMessage()
+    public function consumeMessages()
     {
         $channel = $this->getMainChannel();
         if (!$channel) {
             throw new \Exception("Main channel does not exist.");
         }
 
-        $callback = function ($msg) {
+        $normalQueueCallback = function ($msg) {
             $messageData = json_decode($msg->body, true);
             $request = new Request(
                 $messageData['origin'],
@@ -123,7 +123,40 @@ class AmqpClient
             $this->router->route($request);
         };
 
-        $channel->basic_consume($this->mainQueueName, '', false, true, false, false, $callback);
+        $rpcQueueCallback = function ($msg) use ($channel) {
+            $messageData = json_decode($msg->body, true);
+            $request = new Request(
+                $messageData['origin'],
+                $messageData['destination'],
+                $messageData['body'],
+                $messageData['type'],
+                $messageData['route']
+            );
+
+            // Procesa el request y genera una respuesta
+            $response = $this->router->route($request);
+
+            // Publica la respuesta en la cola de respuesta RPC
+            $responseMessage = new AMQPMessage(json_encode([
+                'origin' => $response->getOrigin(),
+                'destination' => $response->getDestination(),
+                'body' => $response->getBody(),
+                'type' => $response->getType(),
+                'route' => $response->getRoute(),
+                'correlation_id' => $request->getCorrelationId(),
+            ]), [
+                'correlation_id' => $request->getCorrelationId(),
+            ]);
+
+            $channel->basic_publish($responseMessage, '', $msg->properties['reply_to']);
+            $channel->basic_ack($msg->delivery_info['delivery_tag']);
+        };
+
+        // Registra el callback para la cola normal
+        $channel->basic_consume($this->queueName, '', false, true, false, false, $normalQueueCallback);
+
+        // Registra el callback para la cola RPC
+        $channel->basic_consume($this->rpcQueueName, '', false, true, false, false, $rpcQueueCallback);
 
         while ($channel->is_consuming()) {
             $channel->wait();
@@ -133,7 +166,7 @@ class AmqpClient
     public function sendSyncMessage($queue, Request $request)
     {
         $channel = $this->connection->channel();
-        $responseQueue = $channel->queue_declare('', false, false, true, false);
+        list($responseQueue,,) = $channel->queue_declare('', false, false, true, false);
 
         $correlationId = uniqid();
 
@@ -143,7 +176,7 @@ class AmqpClient
         $response = null;
         $callback = function ($msg) use ($correlationId, &$response, $channel) {
             $messageData = json_decode($msg->body, true);
-            if ($messageData['correlation_id'] === $correlationId) {
+            if (isset($messageData['correlation_id']) && $messageData['correlation_id'] === $correlationId) {
                 $response = new Response(
                     $messageData['origin'],
                     $messageData['destination'],
@@ -155,7 +188,7 @@ class AmqpClient
             }
         };
 
-        $channel->basic_consume($responseQueue[0], '', false, true, false, false, $callback);
+        $channel->basic_consume($responseQueue, '', false, true, false, false, $callback);
 
         try {
             while ($response === null) {
