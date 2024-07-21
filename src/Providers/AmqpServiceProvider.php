@@ -22,6 +22,8 @@ class AmqpServiceProvider extends ServiceProvider
         });
 
         $this->commands([ConsumeMessages::class]);
+
+        $this->mergeConfigFrom(__DIR__ . '/../config/amqp.php', 'amqp');
     }
 
     public function boot()
@@ -33,5 +35,18 @@ class AmqpServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__ . '/../config/amqp.php' => config_path('amqp.php'),
         ], 'config');
+
+        $this->publishes([
+            __DIR__ . '/../routes/amqp.php' => base_path('routes/amqp.php'),
+        ], 'amqp-routes');
+
+        if ($this->checkIfRoutesFileExists()) {
+            require base_path('routes/amqp.php');
+        }
+    }
+
+    public function checkIfRoutesFileExists()
+    {
+        return file_exists(base_path('routes/amqp.php'));
     }
 }

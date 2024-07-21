@@ -17,6 +17,7 @@ class Amqp
     public function connect()
     {
         $channel = config('amqp.channel');
+        $channel_rpc = $channel . '_rpc';
         $host = config('amqp.host');
         $port = config('amqp.port');
         $login = config('amqp.login');
@@ -32,7 +33,7 @@ class Amqp
         }
 
         $this->amqpClient->setTimeout($timeout);
-        $this->amqpClient->connect($host, $port, $login, $password, $channel);
+        $this->amqpClient->connect($host, $port, $login, $password, $channel, $channel_rpc);
     }
 
     public function consumeMessages(): void

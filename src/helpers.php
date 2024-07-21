@@ -30,3 +30,16 @@ if (!function_exists('config')) {
         return $config[$key];
     }
 }
+
+if (!function_exists('base_path')) {
+    /**
+     * Obtener la ruta base del proyecto.
+     *
+     * @param  string  $path
+     * @return string
+     */
+    function base_path($path = '')
+    {
+        return __DIR__ . DIRECTORY_SEPARATOR . $path;
+    }
+}
