@@ -29,6 +29,9 @@ class AmqpConsumer extends Facade
             Request::ASYNC,
             $route
         );
+
+        $client->connect();
+
         $client->publishMessage($channel, $request);
     }
 
@@ -43,6 +46,9 @@ class AmqpConsumer extends Facade
             Request::SYNC,
             $route
         );
+
+        $client->connect();
+
         return $client->sendSyncMessage($channel,  $request);
     }
 }

@@ -21,6 +21,7 @@ class ConsumeMessages extends Command
     public function handle()
     {
         $this->info('Starting to consume messages...');
+        $this->amqpClient->connect();
         $this->amqpClient->consumeMessages();
         $this->info('Finished consuming messages.');
     }
