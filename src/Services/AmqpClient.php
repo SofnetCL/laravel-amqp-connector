@@ -99,12 +99,11 @@ class AmqpClient
             'body' => $request->getBody(),
         ]), [
             'correlation_id' => $request->getCorrelationId(),
-            'reply_to' => $request->getReplyTo(),
+            'reply_to' => $request->getReplyTo(), // Set the reply_to header
         ]);
 
         $channel->basic_publish($msg, '', $queue);
     }
-
 
     public function consumeMessages()
     {
@@ -113,49 +112,63 @@ class AmqpClient
             throw new \Exception("Main channel does not exist.");
         }
 
-        $normalQueueCallback = function ($msg) {
-            $messageData = json_decode($msg->body, true);
-            $request = new Request(
-                $messageData['origin'],
-                $messageData['destination'],
-                $messageData['body'],
-                $messageData['type'],
-                $messageData['route']
-            );
-            $this->router->route($request);
+        $normalQueueCallback = function ($msg) use ($channel) {
+            try {
+                $messageData = json_decode($msg->body, true);
+                $request = new Request(
+                    $messageData['origin'],
+                    $messageData['destination'],
+                    $messageData['body'],
+                    $messageData['type'],
+                    $messageData['route']
+                );
+                $this->router->route($request);
+
+                // Acknowledge the message only if it was successfully processed
+                $channel->basic_ack($msg->delivery_info['delivery_tag']);
+            } catch (\Exception $e) {
+                // Handle or log the exception
+                error_log("Error processing normal queue message: " . $e->getMessage());
+            }
         };
 
         $rpcQueueCallback = function ($msg) use ($channel) {
-            $messageData = json_decode($msg->body, true);
-            $request = new Request(
-                $messageData['origin'],
-                $messageData['destination'],
-                $messageData['body'],
-                $messageData['type'],
-                $messageData['route']
-            );
+            try {
+                $messageData = json_decode($msg->body, true);
+                $request = new Request(
+                    $messageData['origin'],
+                    $messageData['destination'],
+                    $messageData['body'],
+                    $messageData['type'],
+                    $messageData['route']
+                );
 
-            // Procesa el request y genera una respuesta
-            $response = $this->router->route($request);
+                // Procesa el request y genera una respuesta
+                $response = $this->router->route($request);
 
-            // Publica la respuesta en la cola de respuesta RPC
-            $responseMessage = new AMQPMessage(json_encode([
-                'origin' => $response->getOrigin(),
-                'destination' => $response->getDestination(),
-                'body' => $response->getBody(),
-                'type' => $response->getType(),
-                'route' => $response->getRoute(),
-                'correlation_id' => $request->getCorrelationId(),
-            ]), [
-                'correlation_id' => $request->getCorrelationId(),
-            ]);
+                // Publica la respuesta en la cola de respuesta RPC
+                $responseMessage = new AMQPMessage(json_encode([
+                    'origin' => $response->getOrigin(),
+                    'destination' => $response->getDestination(),
+                    'body' => $response->getBody(),
+                    'type' => $response->getType(),
+                    'route' => $response->getRoute(),
+                    'correlation_id' => $request->getCorrelationId(),
+                ]), [
+                    'correlation_id' => $request->getCorrelationId(),
+                ]);
 
-            $replyToQueue = $msg->get('reply_to');
-            if ($replyToQueue) {
-                $channel->basic_publish($responseMessage, '', $replyToQueue);
+                $replyToQueue = $msg->get('reply_to');
+                if ($replyToQueue) {
+                    $channel->basic_publish($responseMessage, '', $replyToQueue);
+                }
+
+                // Acknowledge the message only if it was successfully processed
+                $channel->basic_ack($msg->delivery_info['delivery_tag']);
+            } catch (\Exception $e) {
+                // Handle or log the exception
+                error_log("Error processing RPC queue message: " . $e->getMessage());
             }
-
-            $channel->basic_ack($msg->delivery_info['delivery_tag']);
         };
 
         // Registra el callback para la cola normal
@@ -182,16 +195,21 @@ class AmqpClient
 
         $response = null;
         $callback = function ($msg) use ($correlationId, &$response, $channel) {
-            $messageData = json_decode($msg->body, true);
-            if (isset($messageData['correlation_id']) && $messageData['correlation_id'] === $correlationId) {
-                $response = new Response(
-                    $messageData['origin'],
-                    $messageData['destination'],
-                    $messageData['body'],
-                    $messageData['type'],
-                    $messageData['route']
-                );
-                $channel->basic_cancel($msg->delivery_info['consumer_tag']);
+            try {
+                $messageData = json_decode($msg->body, true);
+                if (isset($messageData['correlation_id']) && $messageData['correlation_id'] === $correlationId) {
+                    $response = new Response(
+                        $messageData['origin'],
+                        $messageData['destination'],
+                        $messageData['body'],
+                        $messageData['type'],
+                        $messageData['route']
+                    );
+                    $channel->basic_cancel($msg->delivery_info['consumer_tag']);
+                }
+            } catch (\Exception $e) {
+                // Handle or log the exception
+                error_log("Error processing sync message response: " . $e->getMessage());
             }
         };
 
