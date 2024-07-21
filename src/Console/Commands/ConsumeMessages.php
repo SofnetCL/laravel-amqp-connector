@@ -3,16 +3,16 @@
 namespace Sofnet\AmqpConnector\Console\Commands;
 
 use Illuminate\Console\Command;
-use Sofnet\AmqpConnector\Services\AmqpClient;
+use Sofnet\AmqpConnector\Services\Amqp;
 
 class ConsumeMessages extends Command
 {
     protected $signature = 'amqp:consume:messages';
     protected $description = 'Consume messages from the RabbitMQ queue.';
 
-    protected AmqpClient $amqpClient;
+    protected Amqp $amqpClient;
 
-    public function __construct(AmqpClient $amqpClient)
+    public function __construct(Amqp $amqpClient)
     {
         parent::__construct();
         $this->amqpClient = $amqpClient;
@@ -21,7 +21,7 @@ class ConsumeMessages extends Command
     public function handle()
     {
         $this->info('Starting to consume messages...');
-        $this->amqpClient->consumeMessage();
+        $this->amqpClient->consumeMessages();
         $this->info('Finished consuming messages.');
     }
 }

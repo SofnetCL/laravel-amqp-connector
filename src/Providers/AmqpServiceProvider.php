@@ -6,6 +6,7 @@ use Illuminate\Support\ServiceProvider;
 use Sofnet\AmqpConnector\Services\AmqpClient;
 use Sofnet\AmqpConnector\Routing\Router;
 use Sofnet\AmqpConnector\Console\Commands\ConsumeMessages;
+use Sofnet\AmqpConnector\Services\Amqp;
 
 class AmqpServiceProvider extends ServiceProvider
 {
@@ -15,11 +16,9 @@ class AmqpServiceProvider extends ServiceProvider
             return new Router();
         });
 
-        $this->app->singleton(AmqpClient::class, function ($app) {
-            $config = $app->make('config')->get('amqp');
-            $appChannel = $config['channel'];
-
-            return new AmqpClient($app->make(Router::class), $appChannel);
+        $this->app->singleton(Amqp::class, function ($app) {
+            $amqpClient = new AmqpClient($app->make(Router::class));
+            return new Amqp($amqpClient);
         });
 
         $this->app->alias(Router::class, 'amqp-router');
@@ -35,9 +34,5 @@ class AmqpServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__ . '/../config/amqp.php' => config_path('amqp.php'),
         ], 'config');
-
-        $client = $this->app->make(AmqpClient::class);
-        $config = $this->app->make('config')->get('amqp');
-        $client->connect($config['host'], $config['port'], $config['login'], $config['password']);
     }
 }

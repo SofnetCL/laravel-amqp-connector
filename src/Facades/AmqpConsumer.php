@@ -5,7 +5,7 @@ namespace Sofnet\AmqpConnector\Facades;
 use Illuminate\Support\Facades\Facade;
 use Sofnet\AmqpConnector\Request;
 use Sofnet\AmqpConnector\Response;
-use Sofnet\AmqpConnector\Services\AmqpClient;
+use Sofnet\AmqpConnector\Services\Amqp;
 
 /**
  * @method static void dispatch(string $channel, string $route, $body)
@@ -15,11 +15,12 @@ class AmqpConsumer extends Facade
 {
     protected static function getFacadeAccessor()
     {
-        return AmqpClient::class;
+        return Amqp::class;
     }
 
     public static function dispatch(string $channel, string $route, $body): void
     {
+        /** @var Amqp $client */
         $client = static::getFacadeRoot();
         $request = new Request(
             env('APP_NAME'),
@@ -33,6 +34,7 @@ class AmqpConsumer extends Facade
 
     public static function get(string $channel, string $route, $body): Response
     {
+        /** @var Amqp $client */
         $client = static::getFacadeRoot();
         $request = new Request(
             env('APP_NAME'),
@@ -41,6 +43,6 @@ class AmqpConsumer extends Facade
             Request::SYNC,
             $route
         );
-        return $client->sendSyncMessage($channel, $route, $request);
+        return $client->sendSyncMessage($channel,  $request);
     }
 }

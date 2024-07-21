@@ -21,23 +21,24 @@ class AmqpClient
     protected $router;
 
     /** @var string */
-    protected $mainQueueName;
+    protected $mainChannelName;
 
-    public function __construct(Router $router, $mainQueueName)
+    public function __construct(Router $router)
     {
         $this->router = $router;
-        $this->mainQueueName = $mainQueueName;
     }
 
-    public function connect($host, $port, $login, $password): void
+    public function connect($host, $port, $login, $password, $channel): void
     {
         $this->connection = new AMQPStreamConnection($host, $port, $login, $password);
+        $this->mainChannelName = $channel;
         $this->createMainChannel();
     }
 
-    public function setConnection(AMQPStreamConnection $connection): void
+    public function setConnection(AMQPStreamConnection $connection, $channel): void
     {
         $this->connection = $connection;
+        $this->mainChannelName = $channel;
         $this->createMainChannel();
     }
 
@@ -53,7 +54,7 @@ class AmqpClient
         }
 
         $this->mainChannel = $this->connection->channel();
-        $this->mainChannel->queue_declare($this->mainQueueName, false, true, false, false);
+        $this->mainChannel->queue_declare($this->mainChannelName, false, true, false, false);
     }
 
     public function getMainChannel(): ?AMQPChannel
@@ -96,7 +97,7 @@ class AmqpClient
             $this->router->route($request);
         };
 
-        $channel->basic_consume($this->mainQueueName, '', false, true, false, false, $callback);
+        $channel->basic_consume($this->mainChannelName, '', false, true, false, false, $callback);
 
         while ($channel->is_consuming()) {
             $channel->wait();
@@ -105,7 +106,7 @@ class AmqpClient
 
     public function sendSyncMessage($queue, Request $request)
     {
-        $channel = $this->connection->channel();  // Create a new channel for sending synchronous messages
+        $channel = $this->connection->channel();
         $responseQueue = $channel->queue_declare('', false, false, true, false);
 
         $correlationId = uniqid();
