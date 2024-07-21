@@ -54,7 +54,7 @@ class AmqpClient
         }
 
         $this->mainChannel = $this->connection->channel();
-        $this->mainChannel->queue_declare($this->mainChannelName, false, true, false, false);
+        $this->mainChannel->queue_declare($this->mainChannelName, false, false, false, true);
     }
 
     public function getMainChannel(): ?AMQPChannel
