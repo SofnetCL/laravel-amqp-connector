@@ -184,7 +184,7 @@ class AmqpClient
         // Consume los mensajes de forma indefinida
         try {
             while ($channel->is_consuming()) {
-                $channel->wait(null, false, $this->timeout);
+                $channel->wait(null, false);
             }
         } catch (\PhpAmqpLib\Exception\AMQPProtocolChannelException $e) {
             // Maneja el error si ocurre un problema con el canal
