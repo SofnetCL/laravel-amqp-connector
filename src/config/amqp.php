@@ -2,7 +2,10 @@
 
 return [
     # Client channel
-    'channel' => env('AMQP_APP_QUEUE', env('APP_NAME', 'laravel')),
+    'channel' => env('AMQP_CHANNEL', env('APP_NAME', 'laravel')),
+
+    # AMQP connection timeout in seconds
+    'timeout' => env('AMQP_TIMEOUT', 5),
 
     # AMQP connection
     'host' => env('RABBITMQ_HOST', 'localhost'),

@@ -23,9 +23,17 @@ class AmqpClient
     /** @var string */
     protected $mainChannelName;
 
+    /** @var int */
+    protected int $timeout = 10;
+
     public function __construct(Router $router)
     {
         $this->router = $router;
+    }
+
+    public function setTimeout(int $timeout): void
+    {
+        $this->timeout = $timeout;
     }
 
     public function connect($host, $port, $login, $password, $channel): void
@@ -131,13 +139,19 @@ class AmqpClient
 
         $channel->basic_consume($responseQueue[0], '', false, true, false, false, $callback);
 
-        while ($response === null) {
-            $channel->wait();
+        try {
+            while ($response === null) {
+                $channel->wait(null, false, $this->timeout);
+            }
+        } catch (\PhpAmqpLib\Exception\AMQPTimeoutException $e) {
+            $channel->close();
+            throw new \Exception('Timeout waiting for response');
         }
 
         $channel->close();
         return $response;
     }
+
 
     public function __destruct()
     {
