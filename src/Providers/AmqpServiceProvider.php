@@ -21,7 +21,6 @@ class AmqpServiceProvider extends ServiceProvider
             return new Amqp($amqpClient);
         });
 
-        $this->app->alias(Router::class, 'amqp-router');
         $this->commands([ConsumeMessages::class]);
     }
 

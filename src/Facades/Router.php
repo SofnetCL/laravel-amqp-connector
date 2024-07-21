@@ -3,14 +3,27 @@
 namespace Sofnet\AmqpConnector\Facades;
 
 use Illuminate\Support\Facades\Facade;
+use Sofnet\AmqpConnector\Routing\Router;
 
 /**
  * @see \Sofnet\AmqpConnector\Routing\Router
  */
-class Router extends Facade
+class Route extends Facade
 {
     protected static function getFacadeAccessor()
     {
-        return 'amqp-router';
+        return Router::class;
+    }
+
+    public static function async(string $route, callable $callback)
+    {
+        $router = static::getFacadeRoot();
+        return $router->async($route, $callback);
+    }
+
+    public static function sync(string $route, callable $callback)
+    {
+        $router = static::getFacadeRoot();
+        return $router->sync($route, $callback);
     }
 }

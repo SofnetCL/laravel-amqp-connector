@@ -6,15 +6,46 @@ use Sofnet\AmqpConnector\Request;
 
 class Router
 {
-    protected $routes = [];
+    protected $syncRoutes = [];
+    protected $asyncRoutes = [];
 
-    public function group($prefix, callable $callback)
+
+    public function asynGroup($prefix, callable $callback)
     {
         $group = new RouteGroup($prefix);
         call_user_func($callback, $group);
 
         foreach ($group->getRoutes() as $route) {
-            $this->routes[$route->getQueue()] = $route;
+            $this->addRoute($route, 'async');
+        }
+    }
+
+    public function syncGroup($prefix, callable $callback)
+    {
+        $group = new RouteGroup($prefix);
+        call_user_func($callback, $group);
+
+        foreach ($group->getRoutes() as $route) {
+            $this->addRoute($route, 'sync');
+        }
+    }
+
+    public function sync($queue, callable $callback)
+    {
+        $this->addRoute(new Route($queue, $callback), 'sync');
+    }
+
+    public function async($queue, callable $callback)
+    {
+        $this->addRoute(new Route($queue, $callback), 'async');
+    }
+
+    protected function addRoute(Route $route, $type)
+    {
+        if ($type === 'sync') {
+            $this->syncRoutes[$route->getQueue()] = $route;
+        } else {
+            $this->asyncRoutes[$route->getQueue()] = $route;
         }
     }
 
@@ -22,9 +53,10 @@ class Router
     {
         $queue = $request->getRoute();
         $type = $request->getType();
+        $routes = $type === 'sync' ? $this->syncRoutes : $this->asyncRoutes;
 
-        if (isset($this->routes[$queue])) {
-            $route = $this->routes[$queue];
+        if (isset($routes[$queue])) {
+            $route = $routes[$queue];
             return $route->dispatch($request);
         }
 
