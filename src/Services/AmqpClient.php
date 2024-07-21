@@ -12,7 +12,10 @@ use Sofnet\AmqpConnector\Response;
 class AmqpClient
 {
     /** @var AMQPChannel */
-    protected $mainChannel;
+    protected $queueChannel;
+
+    /** @var AMQPChannel */
+    protected $rpcChannel;
 
     /** @var AMQPStreamConnection */
     protected $connection;
@@ -60,32 +63,40 @@ class AmqpClient
         return $this->connection;
     }
 
-    protected function declareChannels(): void
+    public function declareChannels(): void
     {
-        if ($this->mainChannel) {
-            throw new \Exception("Main channel already exists.");
+        if ($this->queueChannel || $this->rpcChannel) {
+            throw new \Exception("Channels already exist.");
         }
 
-        $this->mainChannel = $this->connection->channel();
+        // Crear dos canales: uno para mensajes normales y otro para RPC
+        $this->queueChannel = $this->connection->channel();
+        $this->rpcChannel = $this->connection->channel(); // Nuevo canal para RPC
 
-        $this->mainChannel->queue_declare($this->queueName, false, true, false, false);
+        // Declarar la cola principal
+        $this->queueChannel->queue_declare($this->queueName, false, true, false, false);
 
+        // Declarar la cola RPC
         $arguments = [
             'x-dead-letter-exchange' => ['S', ''], // No exchange, direct to DLX queue
             'x-dead-letter-routing-key' => ['S', ''] // Default routing key for DLX
         ];
-
-        $this->mainChannel->queue_declare($this->rpcQueueName, false, true, false, false, false, $arguments);
+        $this->rpcChannel->queue_declare($this->rpcQueueName, false, true, false, false, false, $arguments);
     }
 
-    public function getMainChannel(): ?AMQPChannel
+    public function getQueueChannel(): ?AMQPChannel
     {
-        return $this->mainChannel;
+        return $this->queueChannel;
+    }
+
+    public function getRpcChannel(): ?AMQPChannel
+    {
+        return $this->rpcChannel;
     }
 
     public function publishMessage($queue, Request $request)
     {
-        $channel = $this->getMainChannel();
+        $channel = $this->getQueueChannel();
         if (!$channel) {
             throw new \Exception("Main channel does not exist.");
         }
@@ -107,13 +118,15 @@ class AmqpClient
 
     public function consumeMessages()
     {
-        $channel = $this->getMainChannel();
-        if (!$channel) {
-            throw new \Exception("Main channel does not exist.");
+        $queueChannel = $this->getQueueChannel();
+        $rpcChannel = $this->getRpcChannel();
+
+        if (!$queueChannel || !$rpcChannel) {
+            throw new \Exception("Queue or RPC channel does not exist.");
         }
 
         // Consumer callback for normal messages
-        $normalQueueCallback = function ($msg) use ($channel) {
+        $normalQueueCallback = function ($msg) use ($queueChannel) {
             try {
                 $messageData = json_decode($msg->body, true);
                 $request = new Request(
@@ -126,16 +139,16 @@ class AmqpClient
                 $this->router->route($request);
 
                 // Acknowledge the message only if it was successfully processed
-                $channel->basic_ack($msg->delivery_info['delivery_tag']);
+                $queueChannel->basic_ack($msg->delivery_info['delivery_tag']);
             } catch (\Exception $e) {
                 // Handle or log the exception
                 error_log("Error processing normal queue message: " . $e->getMessage());
-                $channel->basic_nack($msg->delivery_info['delivery_tag'], false, true); // Requeue the message
+                $queueChannel->basic_nack($msg->delivery_info['delivery_tag'], false, true); // Requeue the message
             }
         };
 
         // Consumer callback for RPC messages
-        $rpcQueueCallback = function ($msg) use ($channel) {
+        $rpcQueueCallback = function ($msg) use ($rpcChannel) {
             try {
                 $messageData = json_decode($msg->body, true);
                 $request = new Request(
@@ -163,28 +176,29 @@ class AmqpClient
 
                 $replyToQueue = $msg->get('reply_to');
                 if ($replyToQueue) {
-                    $channel->basic_publish($responseMessage, '', $replyToQueue);
+                    $rpcChannel->basic_publish($responseMessage, '', $replyToQueue);
                 }
 
                 // Acknowledge the message only if it was successfully processed
-                $channel->basic_ack($msg->delivery_info['delivery_tag']);
+                $rpcChannel->basic_ack($msg->delivery_info['delivery_tag']);
             } catch (\Exception $e) {
                 // Handle or log the exception
                 error_log("Error processing RPC queue message: " . $e->getMessage());
-                $channel->basic_nack($msg->delivery_info['delivery_tag'], false, true); // Requeue the message
+                $rpcChannel->basic_nack($msg->delivery_info['delivery_tag'], false, true); // Requeue the message
             }
         };
 
         // Registra el callback para la cola normal
-        $channel->basic_consume($this->queueName, '', false, true, false, false, $normalQueueCallback);
+        $queueChannel->basic_consume($this->queueName, '', false, true, false, false, $normalQueueCallback);
 
         // Registra el callback para la cola RPC
-        $channel->basic_consume($this->rpcQueueName, '', false, true, false, false, $rpcQueueCallback);
+        $rpcChannel->basic_consume($this->rpcQueueName, '', false, true, false, false, $rpcQueueCallback);
 
         // Consume los mensajes de forma indefinida
         try {
-            while ($channel->is_consuming()) {
-                $channel->wait(null, false);
+            while ($queueChannel->is_consuming() || $rpcChannel->is_consuming()) {
+                $queueChannel->wait(null, false);
+                $rpcChannel->wait(null, false);
             }
         } catch (\PhpAmqpLib\Exception\AMQPProtocolChannelException $e) {
             // Maneja el error si ocurre un problema con el canal
@@ -246,8 +260,8 @@ class AmqpClient
 
     public function __destruct()
     {
-        if ($this->mainChannel) {
-            $this->mainChannel->close();
+        if ($this->queueChannel) {
+            $this->queueChannel->close();
         }
 
         if ($this->connection) {
