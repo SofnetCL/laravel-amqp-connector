@@ -21,7 +21,17 @@ class Amqp
         $port = config('amqp.port');
         $login = config('amqp.login');
         $password = config('amqp.password');
+        $timeout = config('amqp.timeout');
 
+        if (empty($channel) || empty($host) || empty($port) || empty($login) || empty($password)) {
+            throw new \Exception('Invalid configuration');
+        }
+
+        if (empty($timeout) or !is_int($timeout) or $timeout < 0) {
+            $timeout = 5;
+        }
+
+        $this->amqpClient->setTimeout($timeout);
         $this->amqpClient->connect($host, $port, $login, $password, $channel);
     }
 
