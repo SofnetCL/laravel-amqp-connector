@@ -29,3 +29,4 @@ if (!function_exists('config')) {
 
         return $config[$key];
     }
+}
