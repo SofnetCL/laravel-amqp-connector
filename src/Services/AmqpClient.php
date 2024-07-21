@@ -148,7 +148,11 @@ class AmqpClient
                 'correlation_id' => $request->getCorrelationId(),
             ]);
 
-            $channel->basic_publish($responseMessage, '', $msg->properties['reply_to']);
+            $replyToQueue = $msg->get('reply_to');
+            if ($replyToQueue) {
+                $channel->basic_publish($responseMessage, '', $replyToQueue);
+            }
+
             $channel->basic_ack($msg->delivery_info['delivery_tag']);
         };
 
