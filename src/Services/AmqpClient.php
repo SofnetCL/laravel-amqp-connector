@@ -143,6 +143,9 @@ class AmqpClient
         if ($this->mainChannel) {
             $this->mainChannel->close();
         }
-        $this->connection->close();
+
+        if ($this->connection) {
+            $this->connection->close();
+        }
     }
 }
