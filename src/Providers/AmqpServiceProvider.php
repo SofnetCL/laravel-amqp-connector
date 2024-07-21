@@ -19,10 +19,7 @@ class AmqpServiceProvider extends ServiceProvider
             $config = $app->make('config')->get('amqp');
             $appChannel = $config['channel'];
 
-            $client = new AmqpClient($app->make(Router::class), $appChannel);
-            $client->connect($config['host'], $config['port'], $config['login'], $config['password']);
-
-            return $client;
+            return new AmqpClient($app->make(Router::class), $appChannel);
         });
 
         $this->app->alias(Router::class, 'amqp-router');
@@ -38,5 +35,9 @@ class AmqpServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__ . '/../config/amqp.php' => config_path('amqp.php'),
         ], 'config');
+
+        $client = $this->app->make(AmqpClient::class);
+        $config = $this->app->make('config')->get('amqp');
+        $client->connect($config['host'], $config['port'], $config['login'], $config['password']);
     }
 }
