@@ -10,6 +10,7 @@ class Request
     protected $type;
     protected $route;
     protected $correlationId;
+    protected $replyTo;
 
     const ASYNC = 'async';
     const SYNC = 'sync';
@@ -53,9 +54,19 @@ class Request
         $this->correlationId = $correlationId;
     }
 
+    public function setReplyTo($replyTo)
+    {
+        $this->replyTo = $replyTo;
+    }
+
     public function getCorrelationId()
     {
         return $this->correlationId;
+    }
+
+    public function getReplyTo()
+    {
+        return $this->replyTo;
     }
 
     public function createResponse($body)

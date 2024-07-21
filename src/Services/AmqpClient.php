@@ -68,10 +68,8 @@ class AmqpClient
 
         $this->mainChannel = $this->connection->channel();
 
-        // Declare the main queue
         $this->mainChannel->queue_declare($this->queueName, false, true, false, false);
 
-        // Declare the RPC queue with DLX configuration
         $arguments = [
             'x-dead-letter-exchange' => ['S', ''], // No exchange, direct to DLX queue
             'x-dead-letter-routing-key' => ['S', ''] // Default routing key for DLX
@@ -99,10 +97,14 @@ class AmqpClient
             'direction' => 'output',
             'route' => $request->getRoute(),
             'body' => $request->getBody(),
-        ]));
+        ]), [
+            'correlation_id' => $request->getCorrelationId(),
+            'reply_to' => $request->getReplyTo(),
+        ]);
 
         $channel->basic_publish($msg, '', $queue);
     }
+
 
     public function consumeMessages()
     {
@@ -175,6 +177,7 @@ class AmqpClient
         $correlationId = uniqid();
 
         $request->setCorrelationId($correlationId);
+        $request->setReplyTo($responseQueue);
         $this->publishMessage($queue, $request);
 
         $response = null;
