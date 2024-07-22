@@ -29,6 +29,9 @@ class AmqpClient
     /** @var string */
     protected $rpcQueueName;
 
+    /** @var string */
+    protected $dlxQueueName;
+
     /** @var int */
     protected int $timeout = 10;
 
@@ -47,17 +50,24 @@ class AmqpClient
         $this->queueChannel->queue_declare($this->queueName, false, true, false, false);
     }
 
-    public function connectRpc($host, $port, $login, $password, $rpcQueueName): void
+    public function connectRpc($host, $port, $login, $password, $rpcQueueName, $dlxQueueName): void
     {
         if (!$this->connection) {
             $this->connection = new AMQPStreamConnection($host, $port, $login, $password);
         }
         $this->rpcQueueName = $rpcQueueName;
+        $this->dlxQueueName = $dlxQueueName;
         $this->rpcChannel = $this->connection->channel();
+
+        // Declarar la cola DLX
+        $this->rpcChannel->queue_declare($this->dlxQueueName, false, true, false, false);
+
+        // Declarar la cola RPC con DLX
         $arguments = [
             'x-dead-letter-exchange' => ['S', ''],
+            'x-dead-letter-routing-key' => ['S', $this->dlxQueueName],
         ];
-        $this->rpcChannel->queue_declare($this->rpcQueueName, false, false, false, false, $arguments);
+        $this->rpcChannel->queue_declare($this->rpcQueueName, false, true, false, false, $arguments);
     }
 
     public function setConnection(AMQPStreamConnection $connection): void
