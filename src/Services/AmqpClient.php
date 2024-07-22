@@ -166,33 +166,44 @@ class AmqpClient
                 // Procesa el request y genera una respuesta
                 $response = $this->router->route($request);
 
-                // Publica la respuesta en la cola de respuesta RPC
-                $responseMessage = new AMQPMessage(json_encode([
-                    'origin' => $response->getOrigin(),
-                    'destination' => $response->getDestination(),
-                    'body' => $response->getBody(),
-                    'type' => $response->getType(),
-                    'route' => $response->getRoute(),
-                    'correlation_id' => $request->getCorrelationId(),
-                ]), [
-                    'correlation_id' => $request->getCorrelationId(),
-                ]);
-
+                // Verifica que haya una cola de respuesta (reply_to)
                 $replyToQueue = $msg->get('reply_to');
-                if ($replyToQueue) {
-                    $rpcChannel->basic_publish($responseMessage, '', $replyToQueue);
+                if (!$replyToQueue) {
+                    throw new \Exception("No reply_to queue specified for RPC response.");
                 }
+
+                // Crear un nuevo canal para la respuesta
+                $responseChannel = $this->connection->channel();
+
+                // Publica la respuesta en la cola de respuesta RPC
+                $responseMessage = new AMQPMessage(
+                    json_encode([
+                        'origin' => $response->getOrigin(),
+                        'destination' => $response->getDestination(),
+                        'body' => $response->getBody(),
+                        'type' => $response->getType(),
+                        'route' => $response->getRoute(),
+                    ]),
+                    ['correlation_id' => $msg->get('correlation_id')]
+                );
+
+                $responseChannel->basic_publish($responseMessage, '', $replyToQueue);
+
+                // Cerrar el canal de respuesta
+                $responseChannel->close();
 
                 // Acknowledge the message only if it was successfully processed
                 $rpcChannel->basic_ack($msg->delivery_info['delivery_tag']);
             } catch (\Exception $e) {
                 // Handle or log the exception
                 error_log("Error processing RPC queue message: " . $e->getMessage());
-                $rpcChannel->basic_nack($msg->delivery_info['delivery_tag'], false, true); // Requeue the message
+                if ($rpcChannel->is_open()) {
+                    $rpcChannel->basic_nack($msg->delivery_info['delivery_tag'], false, true); // Requeue the message
+                }
             }
         };
 
-        $rpcChannel->basic_consume($this->rpcQueueName, '', false, true, false, false, $callback);
+        $rpcChannel->basic_consume($this->rpcQueueName, '', false, false, false, false, $callback);
 
         try {
             while ($rpcChannel->is_consuming()) {
@@ -249,20 +260,24 @@ class AmqpClient
             }
         };
 
-        $channel->basic_consume($responseQueue, '', false, true, false, false, $callback);
+        $responseChannel = $this->connection->channel();
+        $responseChannel->basic_consume($responseQueue, '', false, true, false, false, $callback);
 
         try {
             while ($response === null) {
-                $channel->wait(null, false, $this->timeout);
+                $responseChannel->wait(null, false, $this->timeout);
             }
         } catch (\PhpAmqpLib\Exception\AMQPTimeoutException $e) {
+            $responseChannel->close();
             $channel->close();
             throw new \Exception('Timeout waiting for response');
         } catch (\Exception $e) {
+            $responseChannel->close();
             $channel->close();
             throw new \Exception('Error during sync message processing: ' . $e->getMessage());
         }
 
+        $responseChannel->close();
         $channel->close();
         return $response;
     }
