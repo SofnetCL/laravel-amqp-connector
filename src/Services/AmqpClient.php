@@ -260,36 +260,31 @@ class AmqpClient
             }
         };
 
-        $responseChannel = $this->connection->channel();
-        $responseChannel->basic_consume($responseQueue, '', false, true, false, false, $callback);
+        $consumerTag = $channel->basic_consume($responseQueue, '', false, true, false, false, $callback);
 
-        try {
-            while ($response === null) {
-                $responseChannel->wait(null, false, $this->timeout);
-            }
-        } catch (\PhpAmqpLib\Exception\AMQPTimeoutException $e) {
-            $responseChannel->close();
-            $channel->close();
-            throw new \Exception('Timeout waiting for response');
-        } catch (\Exception $e) {
-            $responseChannel->close();
-            $channel->close();
-            throw new \Exception('Error during sync message processing: ' . $e->getMessage());
+        $timeout = $this->timeout;
+        $start = time();
+        while ($response === null && (time() - $start) < $timeout) {
+            $channel->wait(null, false);
         }
 
-        $responseChannel->close();
+        $channel->basic_cancel($consumerTag);
         $channel->close();
+
+        if ($response === null) {
+            throw new \Exception("No response received within the timeout period.");
+        }
+
         return $response;
     }
 
     public function __destruct()
     {
-        // Cerrar los canales
-        if ($this->queueChannel) {
+        if ($this->queueChannel && $this->queueChannel->is_open()) {
             $this->queueChannel->close();
         }
 
-        if ($this->rpcChannel) {
+        if ($this->rpcChannel && $this->rpcChannel->is_open()) {
             $this->rpcChannel->close();
         }
 
