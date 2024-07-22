@@ -37,51 +37,42 @@ class AmqpClient
         $this->router = $router;
     }
 
+    public function connectQueue($host, $port, $login, $password, $queueName): void
+    {
+        if (!$this->connection) {
+            $this->connection = new AMQPStreamConnection($host, $port, $login, $password);
+        }
+        $this->queueName = $queueName;
+        $this->queueChannel = $this->connection->channel();
+        $this->queueChannel->queue_declare($this->queueName, false, true, false, false);
+    }
+
+    public function connectRpc($host, $port, $login, $password, $rpcQueueName): void
+    {
+        if (!$this->connection) {
+            $this->connection = new AMQPStreamConnection($host, $port, $login, $password);
+        }
+        $this->rpcQueueName = $rpcQueueName;
+        $this->rpcChannel = $this->connection->channel();
+        $arguments = [
+            'x-dead-letter-exchange' => ['S', ''],
+        ];
+        $this->rpcChannel->queue_declare($this->rpcQueueName, false, false, false, false, $arguments);
+    }
+
+    public function setConnection(AMQPStreamConnection $connection): void
+    {
+        $this->connection = $connection;
+    }
+
     public function setTimeout(int $timeout): void
     {
         $this->timeout = $timeout;
     }
 
-    public function connect($host, $port, $login, $password, $mainQueue, $rpcQueue): void
-    {
-        $this->connection = new AMQPStreamConnection($host, $port, $login, $password);
-        $this->queueName = $mainQueue;
-        $this->rpcQueueName = $rpcQueue;
-        $this->declareChannels();
-    }
-
-    public function setConnection(AMQPStreamConnection $connection, $mainQueue, $rpcQueue): void
-    {
-        $this->connection = $connection;
-        $this->queueName = $mainQueue;
-        $this->rpcQueueName = $rpcQueue;
-        $this->declareChannels();
-    }
-
     public function getConnection(): AMQPStreamConnection
     {
         return $this->connection;
-    }
-
-    public function declareChannels(): void
-    {
-        if ($this->queueChannel || $this->rpcChannel) {
-            throw new \Exception("Channels already exist.");
-        }
-
-        // Crear dos canales: uno para mensajes normales y otro para RPC
-        $this->queueChannel = $this->connection->channel();
-        $this->rpcChannel = $this->connection->channel(); // Nuevo canal para RPC
-
-        // Declarar la cola principal
-        $this->queueChannel->queue_declare($this->queueName, false, true, false, false);
-
-        // Declarar la cola RPC
-        $arguments = [
-            'x-dead-letter-exchange' => ['S', ''], // No exchange, direct to DLX queue
-            'x-dead-letter-routing-key' => ['S', ''] // Default routing key for DLX
-        ];
-        $this->rpcChannel->queue_declare($this->rpcQueueName, false, true, false, false, false, $arguments);
     }
 
     public function getQueueChannel(): ?AMQPChannel
@@ -94,7 +85,7 @@ class AmqpClient
         return $this->rpcChannel;
     }
 
-    public function publishMessage($queue, Request $request)
+    public function dispatchQueueMessage($queue, Request $request)
     {
         $channel = $this->getQueueChannel();
         if (!$channel) {
@@ -108,25 +99,19 @@ class AmqpClient
             'direction' => 'output',
             'route' => $request->getRoute(),
             'body' => $request->getBody(),
-        ]), [
-            'correlation_id' => $request->getCorrelationId(),
-            'reply_to' => $queue === $this->rpcQueueName ? $request->getReplyTo() : null,
-        ]);
+        ]));
 
         $channel->basic_publish($msg, '', $queue);
     }
 
-    public function consumeMessages()
+    public function consumeQueueMessages()
     {
         $queueChannel = $this->getQueueChannel();
-        $rpcChannel = $this->getRpcChannel();
-
-        if (!$queueChannel || !$rpcChannel) {
-            throw new \Exception("Queue or RPC channel does not exist.");
+        if (!$queueChannel) {
+            throw new \Exception("Queue channel does not exist.");
         }
 
-        // Consumer callback for normal messages
-        $normalQueueCallback = function ($msg) use ($queueChannel) {
+        $callback = function ($msg) use ($queueChannel) {
             try {
                 $messageData = json_decode($msg->body, true);
                 $request = new Request(
@@ -147,8 +132,27 @@ class AmqpClient
             }
         };
 
-        // Consumer callback for RPC messages
-        $rpcQueueCallback = function ($msg) use ($rpcChannel) {
+        $queueChannel->basic_consume($this->queueName, '', false, true, false, false, $callback);
+
+        try {
+            while ($queueChannel->is_consuming()) {
+                $queueChannel->wait(null, false);
+            }
+        } catch (\PhpAmqpLib\Exception\AMQPProtocolChannelException $e) {
+            error_log("AMQPProtocolChannelException: " . $e->getMessage());
+        } catch (\Exception $e) {
+            error_log("Error during normal message consumption: " . $e->getMessage());
+        }
+    }
+
+    public function consumeRpcMessages()
+    {
+        $rpcChannel = $this->getRpcChannel();
+        if (!$rpcChannel) {
+            throw new \Exception("RPC channel does not exist.");
+        }
+
+        $callback = function ($msg) use ($rpcChannel) {
             try {
                 $messageData = json_decode($msg->body, true);
                 $request = new Request(
@@ -188,24 +192,16 @@ class AmqpClient
             }
         };
 
-        // Registra el callback para la cola normal
-        $queueChannel->basic_consume($this->queueName, '', false, true, false, false, $normalQueueCallback);
+        $rpcChannel->basic_consume($this->rpcQueueName, '', false, true, false, false, $callback);
 
-        // Registra el callback para la cola RPC
-        $rpcChannel->basic_consume($this->rpcQueueName, '', false, true, false, false, $rpcQueueCallback);
-
-        // Consume los mensajes de forma indefinida
         try {
-            while ($queueChannel->is_consuming() || $rpcChannel->is_consuming()) {
-                $queueChannel->wait(null, false);
+            while ($rpcChannel->is_consuming()) {
                 $rpcChannel->wait(null, false);
             }
         } catch (\PhpAmqpLib\Exception\AMQPProtocolChannelException $e) {
-            // Maneja el error si ocurre un problema con el canal
             error_log("AMQPProtocolChannelException: " . $e->getMessage());
         } catch (\Exception $e) {
-            // Maneja otros errores
-            error_log("Error during message consumption: " . $e->getMessage());
+            error_log("Error during RPC message consumption: " . $e->getMessage());
         }
     }
 
@@ -218,7 +214,20 @@ class AmqpClient
 
         $request->setCorrelationId($correlationId);
         $request->setReplyTo($responseQueue);
-        $this->publishMessage($queue, $request);
+
+        $msg = new AMQPMessage(json_encode([
+            'origin' => $request->getOrigin(),
+            'destination' => $request->getDestination(),
+            'type' => $request->getType(),
+            'direction' => 'output',
+            'route' => $request->getRoute(),
+            'body' => $request->getBody(),
+        ]), [
+            'correlation_id' => $request->getCorrelationId(),
+            'reply_to' => $request->getReplyTo(),
+        ]);
+
+        $channel->basic_publish($msg, '', $queue);
 
         $response = null;
         $callback = function ($msg) use ($correlationId, &$response, $channel) {
@@ -260,10 +269,16 @@ class AmqpClient
 
     public function __destruct()
     {
+        // Cerrar los canales
         if ($this->queueChannel) {
             $this->queueChannel->close();
         }
 
+        if ($this->rpcChannel) {
+            $this->rpcChannel->close();
+        }
+
+        // Cerrar la conexión
         if ($this->connection) {
             $this->connection->close();
         }

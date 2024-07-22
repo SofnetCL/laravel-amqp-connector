@@ -30,9 +30,9 @@ class AmqpConsumer extends Facade
             $route
         );
 
-        $client->connect();
+        $client->connectQueue();
 
-        $client->publishMessage($channel, $request);
+        $client->dispatchQueueMessage($channel, $request);
     }
 
     public static function get(string $channel, string $route, $body): Response
@@ -47,7 +47,7 @@ class AmqpConsumer extends Facade
             $route
         );
 
-        $client->connect();
+        $client->connectRpc();
 
         return $client->sendSyncMessage($channel,  $request);
     }

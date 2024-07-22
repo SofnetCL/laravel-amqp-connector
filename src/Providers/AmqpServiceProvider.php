@@ -3,9 +3,10 @@
 namespace Sofnet\AmqpConnector\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Sofnet\AmqpConnector\Console\Commands\ConsumeQueueMessages;
+use Sofnet\AmqpConnector\Console\Commands\ConsumeRpcMessages;
 use Sofnet\AmqpConnector\Services\AmqpClient;
 use Sofnet\AmqpConnector\Routing\Router;
-use Sofnet\AmqpConnector\Console\Commands\ConsumeMessages;
 use Sofnet\AmqpConnector\Services\Amqp;
 
 class AmqpServiceProvider extends ServiceProvider
@@ -21,7 +22,7 @@ class AmqpServiceProvider extends ServiceProvider
             return new Amqp($amqpClient);
         });
 
-        $this->commands([ConsumeMessages::class]);
+        $this->commands([ConsumeQueueMessages::class, ConsumeRpcMessages::class]);
 
         $this->mergeConfigFrom(__DIR__ . '/../config/amqp.php', 'amqp');
     }

@@ -14,7 +14,7 @@ class Amqp
         $this->amqpClient = $amqpClient;
     }
 
-    public function connect()
+    public function connectRpc()
     {
         $channel = config('amqp.channel');
         $channel_rpc = $channel . '_rpc';
@@ -33,17 +33,43 @@ class Amqp
         }
 
         $this->amqpClient->setTimeout($timeout);
-        $this->amqpClient->connect($host, $port, $login, $password, $channel, $channel_rpc);
+        $this->amqpClient->connectRpc($host, $port, $login, $password, $channel_rpc);
     }
 
-    public function consumeMessages(): void
+    public function connectQueue()
     {
-        $this->amqpClient->consumeMessages();
+        $channel = config('amqp.channel');
+        $host = config('amqp.host');
+        $port = config('amqp.port');
+        $login = config('amqp.login');
+        $password = config('amqp.password');
+        $timeout = config('amqp.timeout');
+
+        if (empty($channel) || empty($host) || empty($port) || empty($login) || empty($password)) {
+            throw new \Exception('Invalid configuration');
+        }
+
+        if (empty($timeout) or !is_int($timeout) or $timeout < 0) {
+            $timeout = 5;
+        }
+
+        $this->amqpClient->setTimeout($timeout);
+        $this->amqpClient->connectQueue($host, $port, $login, $password, $channel);
     }
 
-    public function publishMessage(string $channel, Request $request): void
+    public function consumeQueueMessages(): void
     {
-        $this->amqpClient->publishMessage($channel, $request);
+        $this->amqpClient->consumeQueueMessages();
+    }
+
+    public function consumeRpcMessages(): void
+    {
+        $this->amqpClient->consumeRpcMessages();
+    }
+
+    public function dispatchQueueMessage(string $channel, Request $request): void
+    {
+        $this->amqpClient->dispatchQueueMessage($channel, $request);
     }
 
     public function sendSyncMessage(string $channel, Request $request): Response
