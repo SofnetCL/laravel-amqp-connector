@@ -50,13 +50,13 @@ class AmqpClient
         $this->queueChannel->queue_declare($this->queueName, false, true, false, false);
     }
 
-    public function connectRpc($host, $port, $login, $password, $rpcQueueName, $dlxQueueName): void
+    public function connectRpc($host, $port, $login, $password, $rpcQueueName): void
     {
         if (!$this->connection) {
             $this->connection = new AMQPStreamConnection($host, $port, $login, $password);
         }
         $this->rpcQueueName = $rpcQueueName;
-        $this->dlxQueueName = $dlxQueueName;
+        $this->dlxQueueName = $rpcQueueName . '.dlx';
         $this->rpcChannel = $this->connection->channel();
 
         // Declarar la cola DLX
